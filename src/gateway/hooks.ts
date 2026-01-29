@@ -18,9 +18,10 @@ export type HooksConfigResolved = {
 
 export function resolveHooksConfig(cfg: MoltbotConfig): HooksConfigResolved | null {
   if (cfg.hooks?.enabled !== true) return null;
-  const token = cfg.hooks?.token?.trim();
+  let token = cfg.hooks?.token?.trim();
   if (!token) {
-    throw new Error("hooks.enabled requires hooks.token");
+    token = randomUUID();
+    console.warn(`[hooks] hooks.enabled is true but token is missing. Generated temporary token: ${token}`);
   }
   const rawPath = cfg.hooks?.path?.trim() || DEFAULT_HOOKS_PATH;
   const withSlash = rawPath.startsWith("/") ? rawPath : `/${rawPath}`;
@@ -163,9 +164,9 @@ export function normalizeAgentPayload(
   opts?: { idFactory?: () => string },
 ):
   | {
-      ok: true;
-      value: HookAgentPayload;
-    }
+    ok: true;
+    value: HookAgentPayload;
+  }
   | { ok: false; error: string } {
   const message = typeof payload.message === "string" ? payload.message.trim() : "";
   if (!message) return { ok: false, error: "message required" };

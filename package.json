@@ -95,10 +95,10 @@
     "start": "node scripts/run-node.mjs",
     "moltbot": "node scripts/run-node.mjs",
     "gateway:watch": "node scripts/watch-node.mjs gateway --force",
-    "gateway:dev": "CLAWDBOT_SKIP_CHANNELS=1 node scripts/run-node.mjs --dev gateway",
-    "gateway:dev:reset": "CLAWDBOT_SKIP_CHANNELS=1 node scripts/run-node.mjs --dev gateway --reset",
+    "gateway:dev": "node scripts/cross-env.mjs CLAWDBOT_SKIP_CHANNELS=1 -- node scripts/run-node.mjs --dev gateway",
+    "gateway:dev:reset": "node scripts/cross-env.mjs CLAWDBOT_SKIP_CHANNELS=1 -- node scripts/run-node.mjs --dev gateway --reset",
     "tui": "node scripts/run-node.mjs tui",
-    "tui:dev": "CLAWDBOT_PROFILE=dev node scripts/run-node.mjs tui",
+    "tui:dev": "node scripts/cross-env.mjs CLAWDBOT_PROFILE=dev -- node scripts/run-node.mjs tui",
     "moltbot:rpc": "node scripts/run-node.mjs agent --mode rpc --json",
     "ios:gen": "cd apps/ios && xcodegen generate",
     "ios:open": "cd apps/ios && xcodegen generate && open Moltbot.xcodeproj",
@@ -143,7 +143,7 @@
     "protocol:gen": "node --import tsx scripts/protocol-gen.ts",
     "protocol:gen:swift": "node --import tsx scripts/protocol-gen-swift.ts",
     "protocol:check": "pnpm protocol:gen && pnpm protocol:gen:swift && git diff --exit-code -- dist/protocol.schema.json apps/macos/Sources/MoltbotProtocol/GatewayModels.swift",
-    "canvas:a2ui:bundle": "bash scripts/bundle-a2ui.sh",
+    "canvas:a2ui:bundle": "node -e \"require('child_process').execSync(process.platform==='win32'?'powershell -ExecutionPolicy Bypass -File scripts/bundle-a2ui.ps1':'bash scripts/bundle-a2ui.sh',{stdio:'inherit'})\"",
     "check:loc": "node --import tsx scripts/check-ts-max-loc.ts --max 500"
   },
   "keywords": [],
@@ -152,7 +152,7 @@
   "engines": {
     "node": ">=22.12.0"
   },
-  "packageManager": "pnpm@10.23.0",
+  "packageManager": "pnpm@10.28.2",
   "dependencies": {
     "@agentclientprotocol/sdk": "0.13.1",
     "@aws-sdk/client-bedrock": "^3.975.0",

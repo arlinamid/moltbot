@@ -1,5 +1,5 @@
-import { execFileSync } from "node:child_process";
-import { resolveLsofCommandSync } from "../infra/ports-lsof.js";
+import { execFileSync, execSync } from "node:child_process";
+import { resolveLsofCommandSync, isWindows } from "../infra/ports-lsof.js";
 
 export type PortProcess = { pid: number; command?: string };
 
@@ -29,8 +29,39 @@ export function parseLsofOutput(output: string): PortProcess[] {
   return results;
 }
 
+/**
+ * Parse Windows netstat -ano output for a specific port.
+ * Example line: "  TCP    0.0.0.0:18789          0.0.0.0:0              LISTENING       12345"
+ */
+export function parseNetstatOutput(output: string, port: number): PortProcess[] {
+  const lines = output.split(/\r?\n/);
+  const results: PortProcess[] = [];
+  const portPattern = new RegExp(`:${port}\\s`);
+
+  for (const line of lines) {
+    if (!line.includes("LISTENING")) continue;
+    if (!portPattern.test(line)) continue;
+
+    const parts = line.trim().split(/\s+/);
+    // Format: TCP    address:port    address:port    LISTENING    PID
+    const pid = Number.parseInt(parts[parts.length - 1], 10);
+    if (!Number.isNaN(pid) && pid > 0) {
+      // Avoid duplicates
+      if (!results.some((r) => r.pid === pid)) {
+        results.push({ pid });
+      }
+    }
+  }
+  return results;
+}
+
 export function listPortListeners(port: number): PortProcess[] {
   try {
+    if (isWindows) {
+      // Windows: use netstat -ano
+      const out = execSync("netstat -ano", { encoding: "utf-8" });
+      return parseNetstatOutput(out, port);
+    }
     const lsof = resolveLsofCommandSync();
     const out = execFileSync(lsof, ["-nP", `-iTCP:${port}`, "-sTCP:LISTEN", "-FpFc"], {
       encoding: "utf-8",
@@ -40,7 +71,7 @@ export function listPortListeners(port: number): PortProcess[] {
     const status = (err as { status?: number }).status;
     const code = (err as { code?: string }).code;
     if (code === "ENOENT") {
-      throw new Error("lsof not found; required for --force");
+      throw new Error(isWindows ? "netstat not found" : "lsof not found; required for --force");
     }
     if (status === 1) return []; // no listeners
     throw err instanceof Error ? err : new Error(String(err));
@@ -51,7 +82,12 @@ export function forceFreePort(port: number): PortProcess[] {
   const listeners = listPortListeners(port);
   for (const proc of listeners) {
     try {
-      process.kill(proc.pid, "SIGTERM");
+      if (isWindows) {
+        // Windows: use taskkill
+        execSync(`taskkill /PID ${proc.pid} /T`, { stdio: "ignore" });
+      } else {
+        process.kill(proc.pid, "SIGTERM");
+      }
     } catch (err) {
       throw new Error(
         `failed to kill pid ${proc.pid}${proc.command ? ` (${proc.command})` : ""}: ${String(err)}`,
@@ -64,7 +100,13 @@ export function forceFreePort(port: number): PortProcess[] {
 function killPids(listeners: PortProcess[], signal: NodeJS.Signals) {
   for (const proc of listeners) {
     try {
-      process.kill(proc.pid, signal);
+      if (isWindows) {
+        // Windows: use taskkill with /F for force (equivalent to SIGKILL)
+        const forceFlag = signal === "SIGKILL" ? " /F" : "";
+        execSync(`taskkill /PID ${proc.pid} /T${forceFlag}`, { stdio: "ignore" });
+      } else {
+        process.kill(proc.pid, signal);
+      }
     } catch (err) {
       throw new Error(
         `failed to kill pid ${proc.pid}${proc.command ? ` (${proc.command})` : ""}: ${String(err)}`,

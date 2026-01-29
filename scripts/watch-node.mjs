@@ -7,12 +7,12 @@ const env = { ...process.env };
 const cwd = process.cwd();
 const compiler = env.CLAWDBOT_TS_COMPILER === "tsc" ? "tsc" : "tsgo";
 const projectArgs = ["--project", "tsconfig.json"];
+const isWindows = process.platform === "win32";
 
-const initialBuild = spawnSync("pnpm", ["exec", compiler, ...projectArgs], {
-  cwd,
-  env,
-  stdio: "inherit",
-});
+// On Windows, use shell: true for proper .cmd resolution
+const spawnOptions = { cwd, env, stdio: "inherit", shell: isWindows };
+
+const initialBuild = spawnSync("pnpm", ["exec", compiler, ...projectArgs], spawnOptions);
 
 if (initialBuild.status !== 0) {
   process.exit(initialBuild.status ?? 1);
@@ -23,11 +23,7 @@ const watchArgs =
     ? [...projectArgs, "--watch", "--preserveWatchOutput"]
     : [...projectArgs, "--watch"];
 
-const compilerProcess = spawn("pnpm", ["exec", compiler, ...watchArgs], {
-  cwd,
-  env,
-  stdio: "inherit",
-});
+const compilerProcess = spawn("pnpm", ["exec", compiler, ...watchArgs], spawnOptions);
 
 const nodeProcess = spawn(process.execPath, ["--watch", "moltbot.mjs", ...args], {
   cwd,
@@ -35,18 +31,33 @@ const nodeProcess = spawn(process.execPath, ["--watch", "moltbot.mjs", ...args],
   stdio: "inherit",
 });
 
+
 let exiting = false;
 
 function cleanup(code = 0) {
   if (exiting) return;
   exiting = true;
-  nodeProcess.kill("SIGTERM");
-  compilerProcess.kill("SIGTERM");
+  if (isWindows) {
+    // Windows: use taskkill for reliable process termination
+    try {
+      spawnSync("taskkill", ["/pid", String(nodeProcess.pid), "/T", "/F"], { stdio: "ignore" });
+    } catch { }
+    try {
+      spawnSync("taskkill", ["/pid", String(compilerProcess.pid), "/T", "/F"], { stdio: "ignore" });
+    } catch { }
+  } else {
+    nodeProcess.kill("SIGTERM");
+    compilerProcess.kill("SIGTERM");
+  }
   process.exit(code);
 }
 
 process.on("SIGINT", () => cleanup(130));
 process.on("SIGTERM", () => cleanup(143));
+// Windows: handle Ctrl+C properly
+if (isWindows) {
+  process.on("SIGHUP", () => cleanup(129));
+}
 
 compilerProcess.on("exit", (code) => {
   if (exiting) return;
